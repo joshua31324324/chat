@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Chat</title>
+    <style>
+        body { margin: 0; padding-bottom: 3rem; font-family: sans-serif; }
+        body.dark-mode { background-color: #222; color: white; }
+        #form { background: rgba(0, 0, 0, 0.15); padding: 0.25rem; position: fixed; bottom: 0; left: 0; right: 0; display: flex; height: 3rem; box-sizing: border-box; }
+        #input, #usernameInput { border: none; padding: 0 1rem; flex-grow: 1; border-radius: 2rem; margin: 0.25rem; }
+        #messages > li { padding: 0.5rem 1rem; }
+        #darkModeToggle { position: fixed; top: 10px; right: 10px; padding: 5px; }
+    </style>
+</head>
+<body>
+    <button id="darkModeToggle">Toggle Dark Mode</button>
+    <ul id="messages"></ul>
+
+    <p id="typing-indicator"></p>
+
+    <form id="form">
+        <label for="input">Message:</label>
+        <input type="text" id="input" name="userInput" autocomplete="off" placeholder="Type here..." />
+        <button type="submit">Send</button>
+    </form>
+
+    <emoji-picker id="emojiPicker"></emoji-picker>
+    <button id="emojiButton">😊</button>
+
+    <input type="text" id="privateUser" placeholder="Send to (username)">
+    <input type="text" id="privateMessage" placeholder="Private message">
+    <button onclick="sendPrivateMessage()">Send Private</button>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        let username = '';
+
+        document.getElementById('darkModeToggle').addEventListener('click', () => {
+            document.body.classList.toggle('dark-mode');
+        });
+
+        const form = document.getElementById('form');
+        const input = document.getElementById('input');
+        const messages = document.getElementById('messages');
+        const typingIndicator = document.getElementById('typing-indicator');
+
+        function getUsername() {
+            username = prompt("Enter your username:");
+            if (!username || username.trim() === '') {
+                username = `User_${Math.random().toString(36).substring(2, 7)}`;
+                alert(`Assigned: ${username}`);
+            }
+            socket.emit('set username', username);
+        }
+
+        form.addEventListener('submit', (event) => {
+            event.preventDefault();
+            if (input.value && username) {
+                socket.emit('chat message', input.value);
+                input.value = '';
+            }
+        });
+
+        let typingTimer;
+        input.addEventListener('input', () => {
+            clearTimeout(typingTimer);
+            socket.emit('typing');
+
+            typingTimer = setTimeout(() => {
+                socket.emit('stop typing');
+            }, 2000);
+        });
+
+        socket.on('typing', (user) => {
+            typingIndicator.textContent = `${user} is typing...`;
+        });
+
+        socket.on('stop typing', () => {
+            typingIndicator.textContent = '';
+        });
+
+        socket.on('chat message', (data) => {
+            displayMessage(data.user, data.msg);
+        });
+
+        socket.on('system message', (msg) => {
+            displayMessage('System', msg, true);
+        });
+
+        function displayMessage(user, msg, isSystem = false) {
+            const item = document.createElement('li');
+            if (isSystem) {
+                item.style.fontStyle = 'italic';
+                item.style.color = 'gray';
+                item.textContent = msg;
+            } else {
+                item.textContent = `${user}: ${msg}`;
+            }
+            messages.appendChild(item);
+            window.scrollTo(0, document.body.scrollHeight);
+        }
+
+        function sendPrivateMessage() {
+            const toUser = document.getElementById('privateUser').value;
+            const privateMsg = document.getElementById('privateMessage').value;
+            socket.emit('private message', { to: toUser, msg: privateMsg });
+        }
+
+        document.getElementById('emojiButton').addEventListener('click', () => {
+            document.getElementById('emojiPicker').style.display = 'block';
+        });
+
+        document.getElementById('emojiPicker').addEventListener('emoji-click', (event) => {
+            input.value += event.detail.unicode;
+        });
+
+        socket.on('connect', () => {
+            console.log('✅ Connected:', socket.id);
+            getUsername();
+        });
+
+        socket.on('disconnect', () => {
+            displayMessage('System', 'Disconnected.', true);
+        });
+    </script>
+</body>
+</html>
