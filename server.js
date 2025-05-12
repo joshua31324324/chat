@@ -6,7 +6,7 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-const PORT = process.env.PORT || 3002;
+const PORT = 3002; // Removed environment variable, using fixed port
 const users = {}; // Store connected users
 
 // Serve static files from the public directory
@@ -25,13 +25,22 @@ async function fetchWelcomeMessage() {
     });
 }
 
+// Error Handling to Prevent Crashes
+process.on('uncaughtException', (err) => {
+    console.error("🔥 Uncaught Exception:", err);
+});
+
+process.on('unhandledRejection', (reason) => {
+    console.error("⚠️ Unhandled Promise Rejection:", reason);
+});
+
 // Socket.IO Logic
 io.on('connection', (socket) => {
     console.log(`✅ User connected: ${socket.id}`);
 
     // Set username
     socket.on('set username', async (username) => {
-        users[socket.id] = username || 'Guest'; // Default to "Guest"
+        users[socket.id] = username?.trim() || 'Guest'; // Default to "Guest"
         console.log(`👤 ${socket.id} set username: ${users[socket.id]}`);
 
         socket.broadcast.emit('system message', `${users[socket.id]} has joined the chat!`);
@@ -56,16 +65,20 @@ io.on('connection', (socket) => {
         }, 2000);
     });
 
-    // Handle chat messages
+    // Handle chat messages with validation
     socket.on('chat message', (msg) => {
         const username = users[socket.id] || 'Guest';
+        if (!msg.trim()) return; // Prevent empty messages
         io.emit('chat message', { user: username, msg });
     });
 
-    // Private Messaging
+    // Private Messaging with User Validation
     socket.on('private message', ({ to, msg }) => {
-        const sender = users[socket.id] || 'Anonymous';
-        io.to(to).emit('chat message', { user: sender, msg, private: true });
+        if (!users[to]) {
+            socket.emit('system message', "⚠️ User not found.");
+        } else {
+            io.to(to).emit('chat message', { user: users[socket.id], msg, private: true });
+        }
     });
 
     // Message reactions
